@@ -1,33 +1,43 @@
-﻿using System;
-using System.Net.Http;
-using System.Net.Http.Json;
+using System;
 using System.Threading.Tasks;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 Console.WriteLine("=== MCP Orchestrator Demo ===");
 
-var mcpUrl = "http://localhost:5017/mcp";
+// Connect to the MCP server via HTTP transport (supports both Streamable HTTP and legacy SSE)
+await using var client = await McpClient.CreateAsync(
+    new HttpClientTransport(new HttpClientTransportOptions
+    {
+        Endpoint = new Uri("http://localhost:5017/sse"),
+        TransportMode = HttpTransportMode.Sse
+    }));
 
-using var client = new HttpClient();
-
-var capsRequest = new { jsonrpc = "2.0", method = "getCapabilities", id = 1 };
-var capsResponse = await client.PostAsJsonAsync(mcpUrl, capsRequest);
-string capsJson = await capsResponse.Content.ReadAsStringAsync();
-Console.WriteLine("\n-- Capabilities --");
-Console.WriteLine(capsJson);
-
-var callRequest = new
+// List available tools
+var tools = await client.ListToolsAsync();
+Console.WriteLine("\n-- Available Tools --");
+foreach (var tool in tools)
 {
-    jsonrpc = "2.0",
-    method = "SqlTool.GetProductCategories",
-    @params = new { },
-    id = 2
-};
-var callResponse = await client.PostAsJsonAsync(mcpUrl, callRequest);
-string callJson = await callResponse.Content.ReadAsStringAsync();
-Console.WriteLine("\n-- Tool Call Result --");
-Console.WriteLine(callJson);
+    Console.WriteLine($"  {tool.Name}: {tool.Description}");
+}
 
-// In a real LLM scenario, you would parse 'callJson' and feed the data into the model prompt.
+// Call get_product_categories
+var allCategories = await client.CallToolAsync("get_product_categories");
+Console.WriteLine("\n-- All Product Categories --");
+foreach (var content in allCategories.Content)
+{
+    Console.WriteLine(((TextContentBlock)content).Text);
+}
+
+// Call get_product_categories_by_parent with parentId = 1 (Bikes)
+var bikeCategories = await client.CallToolAsync(
+    "get_product_categories_by_parent",
+    new Dictionary<string, object?> { { "parentId", 1 } });
+Console.WriteLine("\n-- Bike Sub-Categories (parentId=1) --");
+foreach (var content in bikeCategories.Content)
+{
+    Console.WriteLine(((TextContentBlock)content).Text);
+}
 
 Console.WriteLine("\nDemo complete. Press any key to exit.");
 Console.ReadKey();
